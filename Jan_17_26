@@ -1,0 +1,175 @@
+# Import libraries
+import tkinter as tk
+from tkinter import ttk
+
+# Define chromatic scale and sharps/flats - constants
+CHROMATIC_SHARPS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+CHROMATIC_FLATS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
+
+# Define intervals between scales and modes
+SCALE_INTERVALS = {
+    'major': [0, 2, 4, 5, 7, 9, 11],
+    'minor': [0, 2, 3, 5, 7, 8, 10],
+}
+
+KEY_CHOICES = (sorted(set(CHROMATIC_SHARPS + CHROMATIC_FLATS + ['E#', 'B#', 'Cb'])))
+
+    # Define Chord Class
+class Chord:
+    def __init__(self, numeral, root, quality, notes):
+        self.numeral = numeral
+        self.root = root
+        self.quality = quality
+        self.notes = notes[:]
+        
+    def invert(self, inversion):
+        inversion %= len(self.notes)
+        self.notes = self.notes[inversion:] + self.notes[:inversion]
+        self.root = self.notes[0]
+
+    def __str__(self):
+        return f'{self.numeral}: {self.root} {self.quality} + ({', '.join(self.notes)})'
+
+#Musical Key Class
+class MusicalKey:
+    def __init__(self, tonic, scale_type):
+        self.tonic = tonic
+        self.scale_type = scale_type
+        self.chromatic = self._get_chromatic_scale()
+        self.scale = self._build_scale()
+
+    def _get_chromatic_scale(self):
+        flat_major_keys = {'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb'}
+        flat_minor_keys = {'D', 'G', 'C', 'F', 'Bb', 'Eb','Ab', 'Db', 'Gb'}
+
+        if self.scale_type == 'major' and self.tonic in flat_major_keys:
+            return CHROMATIC_FLATS
+        if self.scale_type == 'minor' and self.tonic in flat_minor_keys:
+            return CHROMATIC_FLATS
+        
+        return CHROMATIC_SHARPS
+    
+    def _build_scale(self):
+        root_index = self.chromatic.index(self.tonic)
+        intervals = SCALE_INTERVALS[self.scale_type]
+
+        return [
+            self.chromatic[(root_index + interval) %12]
+            for interval in intervals
+        ]
+    
+    def _interval(self, root, note):
+        return (self.chromatic.index(note) - self.chromatic.index(root)) %12
+    
+    def _to_roman(self, degree):
+        return ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'][degree - 1]
+    
+    def analyze_triad(self, degree):
+        root = self.scale[degree]
+        third = self.scale[(degree + 2) %7]
+        fifth = self.scale[(degree + 4) %7]
+
+        i3 = self._interval(root, third)
+        i5 = self._interval(root, fifth)
+
+        numeral = self._to_roman(degree + 1)
+
+        if i3 == 4 and i5 == 7:
+            quality = 'major'
+            numeral = numeral.upper()
+        elif i3 == 3 and i5 == 7:
+            quality = 'minor'
+            numeral = numeral.lower()
+        elif i3 == 3 and i5 == 6:
+            quality = 'diminished'
+            numeral = numeral.lower() + "°"
+        else:
+            quality = 'unknown'
+        
+        return Chord(numeral, root, quality, [root, third, fifth])
+    
+    def analyze(self):
+        chords = []
+        for degree in range (7):
+            chords.append(self.analyze_triad(degree))
+        
+        return chords
+
+    # GUI Class
+class MusicApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title('TheoryCraft')
+        self.root.resizable(False, False)
+
+        self.key_var = None
+        self.scale_var = None
+        self.inversion_var = tk.IntVar(value=0)
+
+        self._build_ui()
+        self.update_output()
+        
+    def _build_ui(self):
+        frame = ttk.Frame(self.root, padding = 10)
+        frame.pack()
+#Key Selector
+        ttk.Label(frame, text = 'Key:').grid(row=0, column=0, sticky='w')
+        self.key_var = tk.StringVar(value = 'C')
+        self.key_menu = ttk.Combobox(
+            frame,
+            textvariable = self.key_var,
+            values = KEY_CHOICES,
+            state = 'readonly',
+            width=5
+        )
+        self.key_menu.grid(row=0, column=1, padx=5)
+#Scale Selector
+        ttk.Label(frame, text = 'Scale:').grid(row=0, column=2, sticky='w')
+        self.scale_var = tk.StringVar(value = 'major')
+        self.scale_menu = ttk.Combobox(
+            frame,
+            textvariable=self.scale_var,
+            values=['major', 'minor'],
+            state='readonly',
+            width=7
+        )
+        self.scale_menu.grid(row=0, column=3, padx=5)
+#Inversion Selector
+        ttk.Label(frame, text='Invert: ').grid(row=0, column=4, sticky='w')
+        self.inversion_spin = ttk.Spinbox(
+            frame,
+            from_=0, to=2,
+            textvariable=self.inversion_var, 
+            width=3, 
+            command=self.update_output
+        )
+        self.inversion_spin.grid(row=0, column=5, padx=5)
+
+#Analyze Button
+        ttk.Button(frame, text = 'Analyze', command = self.update_output).grid(row=0, column=6, padx=5)
+        
+
+        self.output = tk.Text(frame, width=45, height=12, wrap='word')
+        self.output.grid(row=1, column=0, columnspan=5, pady=10)
+
+    def update_output(self):
+        key = self.key_var.get()
+        scale_type = self.scale_var.get()
+        inversion = int(self.inversion_var.get())
+
+        musical_key = MusicalKey(key, scale_type)
+        chords = musical_key.analyze()
+
+        for chord in chords:
+            chord.invert(inversion)
+
+        self.output.delete('1.0', tk.END)
+        self.output.insert(tk.END, f'Chords in {key} {scale_type.title()}, Inversion: {inversion}\n\n')
+        for chord in chords:
+            self.output.insert(tk.END, str(chord) + '\n')
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = MusicApp(root)
+    root.mainloop()
